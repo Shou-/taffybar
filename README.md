@@ -27,6 +27,10 @@ There are also several more specialized widgets:
  * XMonad log widget (listens on dbus instead of stdin)
  * System tray
 
+## Shou- changes ##
+ * Centering of widgets. (hackish way; only really works with one widget)
+ * Mouse scroll to switch workspaces on the XmonadLog widget in `taffybar.hs.example`.
+
 TODO
 ====
 

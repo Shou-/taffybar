@@ -136,23 +136,14 @@ import System.Taffybar.StrutProperties
 data Position = Top | Bottom
   deriving (Show, Eq)
 
-
 strutProperties :: Position  -- ^ Bar position
                 -> Int       -- ^ Bar height
-                -> Rectangle -- ^ Current monitor rectangle
-                -> [Rectangle] -- ^ All monitors
+                -> Rectangle -- ^ Monitor rectangle
                 -> StrutProperties
-strutProperties pos bh (Rectangle mX mY mW mH) monitors =
-    propertize pos sX sW sH
-    where sX = mX
-          sW = mW - 1
-          sH = case pos of Top    -> bh + mY
-                           Bottom -> bh + totalH - mY - mH
-          totalH = maximum $ map bottomY monitors
-          bottomY (Rectangle _ y _ h) = y + h
-          propertize p x w h = case p of
-              Top    -> (0, 0, h, 0, 0, 0, 0, 0, x, x+w, 0,   0)
-              Bottom -> (0, 0, 0, h, 0, 0, 0, 0, 0,   0, x, x+w)
+strutProperties pos bh (Rectangle x _ w _) = case pos of
+    Top    -> (0, 0, bh, 0, 0, 0, 0, 0, x, x2, 0, 0)
+    Bottom -> (0, 0, 0, bh, 0, 0, 0, 0, 0, 0, x, x2)
+  where x2 = x + w - 10
 
 data TaffybarConfig =
   TaffybarConfig { screenNumber :: Int -- ^ The screen number to run the bar on (default is almost always fine)
@@ -161,6 +152,7 @@ data TaffybarConfig =
                  , barPosition :: Position -- ^ The position of the bar on the screen (default: Top)
                  , errorMsg :: Maybe String -- ^ Used by the application
                  , startWidgets :: [IO Widget] -- ^ Widgets that are packed in order at the left end of the bar
+                 , centerWidgets :: [IO Widget] -- ^ Widgets that are packed in the center of the bar
                  , endWidgets :: [IO Widget] -- ^ Widgets that are packed from right-to-left in the bar
                  }
 
@@ -173,6 +165,7 @@ defaultTaffybarConfig =
                  , barPosition = Top
                  , errorMsg = Nothing
                  , startWidgets = []
+                 , centerWidgets = []
                  , endWidgets = []
                  }
 
@@ -222,10 +215,9 @@ taffybarMain cfg = do
     False -> error $ printf "Screen %d is not available in the default display" (screenNumber cfg)
     True -> displayGetScreen disp (screenNumber cfg)
   nmonitors <- screenGetNMonitors screen
-  allMonitorSizes <- mapM (screenGetMonitorGeometry screen) [0 .. (nmonitors - 1)]
   monitorSize <- case monitorNumber cfg < nmonitors of
     False -> error $ printf "Monitor %d is not available in the selected screen" (monitorNumber cfg)
-    True -> return $ allMonitorSizes !! monitorNumber cfg
+    True -> screenGetMonitorGeometry screen (monitorNumber cfg)
 
   window <- windowNew
   widgetSetName window "Taffybar"
@@ -240,22 +232,36 @@ taffybarMain cfg = do
                             $ strutProperties (barPosition cfg)
                                               (barHeight cfg)
                                               monitorSize
-                                              allMonitorSizes
-  box <- hBoxNew False 10
-  containerAdd window box
+  table <- tableNew 2 1 False
+  containerAdd window table
 
+  boxL <- hBoxNew False 10
+  tableAttach table boxL 0 1 0 1 [Expand,Shrink,Fill] [] 0 0
   mapM_ (\io -> do
             wid <- io
             widgetSetSizeRequest wid (-1) (barHeight cfg)
-            boxPackStart box wid PackNatural 0) (startWidgets cfg)
+            boxPackStart boxL wid PackNatural 0) (startWidgets cfg)
+
+  let wclen = length $ centerWidgets cfg
+  tableC <- tableNew wclen 1 False
+  tableAttach table tableC 0 2 0 1 [Expand,Shrink,Fill] [] 0 0
+  mapM_ (\(n, io) -> do
+            wid <- io
+            widgetSetSizeRequest wid (-1) (barHeight cfg)
+            tableAttach tableC wid n (n+1) 0 1 [Expand,Shrink,Fill] [] 0 0)
+        (zip [0 ..] $ centerWidgets cfg)
+
+  boxR <- hBoxNew False 10
+  tableAttach table boxR 1 2 0 1 [Expand,Shrink,Fill] [] 0 0
   mapM_ (\io -> do
             wid <- io
             widgetSetSizeRequest wid (-1) (barHeight cfg)
-            boxPackEnd box wid PackNatural 0) (endWidgets cfg)
+            boxPackEnd boxR wid PackNatural 0) (endWidgets cfg)
 
-  _ <- on box sizeRequest $ return (Requisition w (barHeight cfg))
+  --_ <- on boxL sizeRequest $ return (Requisition w (barHeight cfg))
+  --_ <- on boxR sizeRequest $ return (Requisition w (barHeight cfg))
+  --_ <- on centerW sizeRequest $ return (Requisition w (barHeight cfg))
 
-  widgetShow window
-  widgetShow box
+  widgetShowAll window
   mainGUI
   return ()
